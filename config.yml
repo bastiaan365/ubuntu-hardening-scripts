@@ -1,0 +1,19 @@
+# Ubuntu Hardening Scripts Configuration
+# Edit these values to customize hardening behavior
+
+# SSH Configuration
+ssh_port: 2222
+allowed_users: []
+allowed_groups: [sudo]
+
+# Firewall Configuration
+firewall_allowed_ports: [2222]
+
+# Logging
+syslog_server: ""
+
+# Modules to enable
+enable_modules: [ssh, firewall, kernel, users, services, filesystem, logging, updates]
+
+# Automatic Updates
+unattended_upgrades: true

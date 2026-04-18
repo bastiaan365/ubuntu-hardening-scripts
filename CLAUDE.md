@@ -17,7 +17,7 @@ The bar for breakage is correspondingly high. **Mistakes here cost real recovery
 ### Structure
 
 ```
-harden.sh             top-level entry: --dry-run, --rollback, --module=<name>
+harden.sh             top-level entry: --dry-run, --rollback, --modules <comma-list>
 lib/
 ├── common.sh         logging helpers, change-log writer, config parser
 └── rollback.sh       reads /var/log/hardening-changes.log and reverses entries
@@ -75,6 +75,15 @@ Before any commit that touches code:
     | grep -vE '"version"\s*:\s*"|^[^:]+:[0-9]+:\s*##|^[^:]+:[0-9]+:\s*#|10\.0\.0\.0/8|172\.16\.0\.0/12|192\.168\.0\.0/16'
   ```
 
+### Dogfooding on openclaw
+
+Openclaw is a valid live-test target (expendable per global `~/.claude/CLAUDE.md`), unlike niborserver. But it's a VPS with no hypervisor console from my side — a broken `ssh.sh` or `firewall.sh` run means provider-panel recovery.
+
+- **Safe to run live on openclaw**: `kernel.sh`, `filesystem.sh`, `logging.sh`, `updates.sh`. Rollback-covered and none sever remote reachability.
+- **Do NOT run live on openclaw without provider web console open**: `ssh.sh`, `firewall.sh`, `users.sh`. These can sever the only access path.
+- **Before any non-dry run on openclaw**: snapshot via the VPS provider, keep a second SSH session open, and verify new config with `sshd -t` / `ufw status` plus a fresh connection *before* closing the original.
+- **After every live test**: run `sudo ./harden.sh --rollback`, verify baseline, note findings in the Drift section.
+
 ## Workflow expectations for Claude
 
 When I ask you to **modify an existing module**:
@@ -83,7 +92,7 @@ When I ask you to **modify an existing module**:
 2. Show the change as a diff.
 3. Show the corresponding rollback diff in the same change set.
 4. Run `shellcheck` and report any new warnings.
-5. Show `sudo ./harden.sh --dry-run --module=<name>` output (if --module flag exists; if not, full --dry-run).
+5. Show `sudo ./harden.sh --dry-run --modules <name>` output for the touched module.
 
 When I ask you to **add a new module**:
 
@@ -121,4 +130,8 @@ When **reviewing a change**:
 
 _Claude maintains this section. List anything in the repo that doesn't match the conventions above, with why it's still there and what would need to happen to fix it._
 
-- _(empty until first audit pass — fill on the next session that actually edits this repo)_
+- **`lib/rollback.sh:46` `eval`s rollback commands from the change log.** Log is root-only so practical risk is low, but the pattern invites regressions. Fix: write structured verb+args tuples in `log_change` and dispatch a finite set of rollback verbs in `perform_rollback`.
+- **`lib/common.sh:57` `parse_config` is regex-over-YAML.** Works for the current flat `config.yml` but breaks on nested keys, quoted values with colons, or multi-line arrays. Fix: take a `yq` dependency, gate on `command -v yq` at startup, route all config reads through it.
+- **README says SSH default is `22`; `config.yml:5` ships `2222`.** Align README text to the actual shipped default and note that users on SSH-restricted networks must edit before running.
+- **Idempotency is claimed but not enforced.** No harness runs modules twice and diffs the change log. Fix: add `tests/idempotency.sh` that invokes each module twice on a throwaway VM and asserts zero new `log_change` entries on the second pass.
+- **Doc drift audit performed on openclaw 2026-04-18.** Next pass should verify `shellcheck -S warning` cleanly across `harden.sh lib/*.sh modules/*.sh` — not done this session because `shellcheck` isn't installed on openclaw.
